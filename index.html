@@ -1,1 +1,112 @@
-index.html
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Slope & Level Meter</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: #1a1a1a;
+            color: white;
+        }
+        .meter {
+            background: #2a2a2a;
+            border-radius: 10px;
+            padding: 20px;
+            text-align: center;
+        }
+        .reading {
+            font-size: 32px;
+            color: #a3ff00;
+            margin: 20px 0;
+            text-shadow: 0 0 10px rgba(163, 255, 0, 0.5);
+        }
+        button {
+            background: #a3ff00;
+            border: none;
+            padding: 15px 30px;
+            border-radius: 25px;
+            font-size: 18px;
+            color: #1a1a1a;
+            cursor: pointer;
+        }
+        .indicator {
+            width: 200px;
+            height: 40px;
+            background: #333;
+            margin: 20px auto;
+            border-radius: 20px;
+            position: relative;
+            overflow: hidden;
+        }
+        .bubble {
+            width: 36px;
+            height: 36px;
+            background: #a3ff00;
+            border-radius: 50%;
+            position: absolute;
+            top: 2px;
+            left: 50%;
+            transform: translateX(-50%);
+            transition: left 0.2s;
+        }
+    </style>
+</head>
+<body>
+    <div class="meter">
+        <h1>Slope & Level Meter</h1>
+        <div class="indicator">
+            <div class="bubble" id="bubble"></div>
+        </div>
+        <div class="reading">
+            Angle: <span id="angle">0.0</span>°<br>
+            Slope: <span id="slope">0.0</span>"/ft
+        </div>
+        <button onclick="startMeasuring()">Start Measuring</button>
+    </div>
+
+    <script>
+        function startMeasuring() {
+            if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+                // iOS requires permission
+                DeviceOrientationEvent.requestPermission()
+                    .then(response => {
+                        if (response === 'granted') {
+                            initSensor();
+                        }
+                    })
+                    .catch(console.error);
+            } else {
+                // Android and others
+                initSensor();
+            }
+        }
+
+        function initSensor() {
+            window.addEventListener('deviceorientation', (event) => {
+                let angle = event.beta; // Get pitch angle
+                if (angle < 0) angle += 360;
+                angle = Math.round(angle * 10) / 10;
+                
+                // Calculate slope (inches per foot)
+                const slope = Math.round((Math.tan(angle * Math.PI / 180) * 12) * 100) / 100;
+                
+                // Update display
+                document.getElementById('angle').textContent = angle;
+                document.getElementById('slope').textContent = slope;
+                
+                // Update bubble position
+                const bubble = document.getElementById('bubble');
+                const position = (angle + 45) * (200 / 90); // Scale angle to pixel position
+                bubble.style.left = `${Math.max(2, Math.min(198, position))}px`;
+                
+                // Color feedback
+                const isIdealSlope = Math.abs(slope - 0.25) < 0.05; // Check if close to 1/4" per foot
+                bubble.style.background = isIdealSlope ? '#a3ff00' : '#ff6b6b';
+            });
+        }
+    </script>
+</body>
+</html>

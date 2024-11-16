@@ -276,6 +276,7 @@ const CALIBRATION_SAMPLES = 30;    // Increased from 10 to 30 samples
 const SAMPLE_INTERVAL = 100;       // Take a sample every 100ms
 
 // Start calibration process
+// Start calibration process
 async function startCalibration() {
     console.log('Starting calibration...'); // Debug log
     
@@ -346,6 +347,49 @@ async function startCalibration() {
             // Start listening for orientation events
             window.addEventListener('deviceorientation', calibrationHandler);
             
+// Process collected calibration data
+function processCalibrationData() {
+    if (calibrationReadings.length === 0) return;
+
+    // Remove outliers using IQR method
+    const sorted = [...calibrationReadings].sort((a, b) => a - b);
+    const q1 = sorted[Math.floor(sorted.length * 0.25)];
+    const q3 = sorted[Math.floor(sorted.length * 0.75)];
+    const iqr = q3 - q1;
+    const validReadings = sorted.filter(x => 
+        x >= q1 - 1.5 * iqr && 
+        x <= q3 + 1.5 * iqr
+    );
+
+    // Calculate new offset as mean of valid readings
+    if (validReadings.length > 0) {
+        const newOffset = validReadings.reduce((a, b) => a + b, 0) / validReadings.length;
+        
+        // Only update if the new calibration is significantly different
+        if (Math.abs(newOffset - calibrationOffset) > 0.1) {
+            calibrationOffset = newOffset;
+            
+            // Save calibration to localStorage
+            try {
+                localStorage.setItem('slopeMeterCalibration', JSON.stringify({
+                    offset: calibrationOffset,
+                    timestamp: Date.now()
+                }));
+            } catch (e) {
+                console.warn('Failed to save calibration:', e);
+            }
+        }
+    }
+}
+                    console.error('Error during calibration:', error);
+                    cleanup(false);
+                    reject(error);
+                }
+            };
+
+            // Start listening for orientation events
+            window.addEventListener('deviceorientation', calibrationHandler);
+            
             // Set timeout for calibration
             setTimeout(() => {
                 if (isCalibrating) {
@@ -400,8 +444,6 @@ function processCalibrationData() {
         }
     }
 }
-
-
 
 
 

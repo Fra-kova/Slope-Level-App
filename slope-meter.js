@@ -208,3 +208,151 @@ function handleOrientation(event) {
     }
 }
 
+// Get orientation reading based on device orientation
+function getOrientationReading(event) {
+    if (!event) return null;
+
+    const isLandscape = window.screen.orientation.type.includes('landscape');
+    let angle;
+
+    if (isLandscape) {
+        angle = event.gamma || 0;
+        if (Math.abs(event.beta || 0) > 90) {
+            angle = -angle;
+        }
+    } else {
+        angle = event.beta || 0;
+        if (Math.abs(event.gamma || 0) > 90) {
+            angle = 180 - angle;
+        }
+    }
+
+    return isNaN(angle) ? null : angle;
+}
+
+// Start calibration process
+async function startCalibration() {
+    if (!await checkDeviceSupport()) {
+        console.error('Device sensors not available for calibration');
+        return;
+    }
+
+    const calibrateButton = document.getElementById('calibrateButton');
+    const statusElement = document.getElementById('calibrationStatus');
+    
+    // Reset calibration state
+    isCalibrating = true;
+    calibrationReadings = [];
+    
+    // Update UI
+    calibrateButton.classList.add('calibrating');
+    statusElement.textContent = translations[currentLanguage].calibrating;
+    
+    // Start collecting calibration samples
+    let calibrationHandler;
+    
+    const cleanupCalibration = () => {
+        window.removeEventListener('deviceorientation', calibrationHandler);
+        isCalibrating = false;
+        calibrateButton.classList.remove('calibrating');
+    };
+
+    return new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => {
+            cleanupCalibration();
+            statusElement.textContent = 'Calibration timeout - please try again';
+            reject(new Error('Calibration timeout'));
+        }, 10000); // 10 second timeout
+
+        calibrationHandler = (event) => {
+            if (!isCalibrating) return;
+            
+            try {
+                const reading = getOrientationReading(event);
+                if (reading !== null) {
+                    calibrationReadings.push(reading);
+                    
+                    // Once we have enough samples, process them
+                    if (calibrationReadings.length >= CALIBRATION_SAMPLES) {
+                        clearTimeout(timeout);
+                        processCalibrationData();
+                        cleanupCalibration();
+                        statusElement.textContent = translations[currentLanguage].calibrated;
+                        resolve();
+                    }
+                }
+            } catch (error) {
+                console.error('Error during calibration:', error);
+                cleanupCalibration();
+                statusElement.textContent = 'Calibration error - please try again';
+                reject(error);
+            }
+        };
+
+        window.addEventListener('deviceorientation', calibrationHandler);
+    });
+}
+
+// Process collected calibration data
+function processCalibrationData() {
+    if (calibrationReadings.length === 0) return;
+
+    // Remove outliers using IQR method
+    const sorted = [...calibrationReadings].sort((a, b) => a - b);
+    const q1 = sorted[Math.floor(sorted.length * 0.25)];
+    const q3 = sorted[Math.floor(sorted.length * 0.75)];
+    const iqr = q3 - q1;
+    const validReadings = sorted.filter(x => 
+        x >= q1 - 1.5 * iqr && 
+        x <= q3 + 1.5 * iqr
+    );
+
+    // Calculate new offset as mean of valid readings
+    if (validReadings.length > 0) {
+        calibrationOffset = validReadings.reduce((a, b) => a + b, 0) / validReadings.length;
+        
+        // Save calibration to localStorage
+        try {
+            localStorage.setItem('slopeMeterCalibration', JSON.stringify({
+                offset: calibrationOffset,
+                timestamp: Date.now()
+            }));
+        } catch (e) {
+            console.warn('Failed to save calibration:', e);
+        }
+    }
+}
+
+// Load saved calibration on startup
+function loadCalibration() {
+    try {
+        const saved = localStorage.getItem('slopeMeterCalibration');
+        if (saved) {
+            const { offset, timestamp } = JSON.parse(saved);
+            // Only use calibration if it's less than 24 hours old
+            if (Date.now() - timestamp < 24 * 60 * 60 * 1000) {
+                calibrationOffset = offset;
+                return true;
+            }
+        }
+    } catch (e) {
+        console.warn('Failed to load calibration:', e);
+    }
+    return false;
+}
+
+// Add vibration feedback during calibration
+function vibrateDevice(pattern) {
+    if ('vibrate' in navigator) {
+        try {
+            navigator.vibrate(pattern);
+        } catch (e) {
+            console.warn('Vibration failed:', e);
+        }
+    }
+}
+
+// Initialize calibration on page load
+document.addEventListener('DOMContentLoaded', () => {
+    loadCalibration();
+});

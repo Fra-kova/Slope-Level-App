@@ -419,4 +419,10 @@
         }
 
         // Initialize the graduations when the page loads
-        window
+        window.addEventListener('load', () => {
+            initializeGraduations();
+            updateUI();
+        });
+    </script>
+</body>
+</html>

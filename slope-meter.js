@@ -208,6 +208,35 @@ function handleOrientation(event) {
     }
 }
 
+// Add this function before the getOrientationReading function:
+
+// Update measurements display
+function updateMeasurements(angle) {
+    // Update angle display
+    document.getElementById('angle').textContent = Math.abs(angle).toFixed(1);
+    
+    // Update slope display (1 degree = 0.2085 inches per foot)
+    const slopeInchesPerFoot = Math.abs(Math.tan(angle * Math.PI / 180) * 12).toFixed(1);
+    document.getElementById('slope').textContent = slopeInchesPerFoot;
+    
+    // Update bubble position
+    const bubble = document.getElementById('bubble');
+    const maxDisplacement = 100; // Maximum percentage displacement from center
+    const displacement = (angle / MAX_ANGLE) * maxDisplacement;
+    const leftPosition = 50 + displacement; // 50 is the center position
+    
+    bubble.style.left = `${Math.max(0, Math.min(100, leftPosition))}%`;
+    
+    // Add/remove off-level class based on angle
+    if (Math.abs(angle) > 0.5) {
+        bubble.classList.add('off-level');
+    } else {
+        bubble.classList.remove('off-level');
+    }
+}
+
+// [Rest of your existing code stays the same]
+
 // Get orientation reading based on device orientation
 function getOrientationReading(event) {
     if (!event) return null;

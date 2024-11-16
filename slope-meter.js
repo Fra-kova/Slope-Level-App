@@ -80,6 +80,105 @@ function handleOrientation(event) {
     }
 }
 
+        // Update UI
+        function updateMeasurements(angle) {
+    const angleElement = document.getElementById('angle');
+    const slopeElement = document.getElementById('slope');
+    const bubble = document.getElementById('bubble');
+    const angleLabel = document.getElementById('angleLabel');
+    const slopeLabel = document.getElementById('slopeLabel');
+
+    // Calculate values for different units
+    const degreeValue = parseFloat(angle.toFixed(1));
+    const slopeValue = parseFloat((Math.tan(angle * Math.PI / 180) * 12).toFixed(1));
+    const percentValue = parseFloat((Math.tan(angle * Math.PI / 180) * 100).toFixed(1));
+
+    // Update displays based on current unit
+    switch (currentUnit) {
+        case 'slope':
+            angleElement.textContent = slopeValue;
+            angleLabel.textContent = translations[currentLanguage].slope;
+            slopeElement.textContent = degreeValue;
+            slopeLabel.textContent = translations[currentLanguage].angle;
+            break;
+        case 'percent':
+            angleElement.textContent = percentValue;
+            angleLabel.textContent = '%';
+            slopeElement.textContent = degreeValue;
+            slopeLabel.textContent = translations[currentLanguage].angle;
+            break;
+        default: // 'degree'
+            angleElement.textContent = degreeValue;
+            angleLabel.textContent = translations[currentLanguage].angle;
+            slopeElement.textContent = slopeValue;
+            slopeLabel.textContent = translations[currentLanguage].slope;
+    }
+
+    // Update bubble position
+    const bubblePosition = (angle / MAX_ANGLE) * 50; // Convert angle to percentage of max
+    const clampedPosition = Math.max(-50, Math.min(50, bubblePosition)); // Clamp between -50% and 50%
+    const centerOffset = 50; // Center position (50%)
+    bubble.style.left = `${centerOffset + clampedPosition}%`;
+
+    // Update bubble color based on level
+    const isLevel = Math.abs(angle) < 0.5; // Consider level if within ±0.5 degrees
+    bubble.classList.toggle('off-level', !isLevel);
+
+    // Update DOM elements
+    document.getElementById('title').textContent = translations[currentLanguage].title;
+    document.getElementById('startButton').textContent = 
+        isMeasuring ? translations[currentLanguage].stop : translations[currentLanguage].start;
+    document.getElementById('calibrateButton').textContent = translations[currentLanguage].calibrate;
+    document.getElementById('languageButton').textContent = currentLanguage === 'en' ? 'Español' : 'English';
+}
+
+// Add window resize and orientation change handlers
+window.addEventListener('resize', () => {
+    if (isMeasuring) {
+        updateMeasurements(lastAngle || 0);
+    }
+});
+
+window.screen.orientation.addEventListener('change', () => {
+    if (isMeasuring) {
+        lastAngle = null; // Reset smoothing on orientation change
+        updateMeasurements(0);
+    }
+});
+
+// Initialize graduations
+function initializeGraduations() {
+    const graduationsContainer = document.getElementById('graduations');
+    const numGraduations = 20; // Number of graduation marks on each side
+
+    for (let i = -numGraduations; i <= numGraduations; i++) {
+        const graduation = document.createElement('div');
+        graduation.className = 'graduation';
+        if (i === 0) {
+            graduation.className += ' center';
+        }
+        const position = (i / numGraduations) * 50 + 50;
+        graduation.style.left = `${position}%`;
+        graduationsContainer.appendChild(graduation);
+    }
+}
+
+// Initialize the app
+function initializeApp() {
+    initializeGraduations();
+    updateUI();
+}
+
+// Call initialize function when the page loads
+window.addEventListener('load', initializeApp);
+
+// Error handling for device orientation
+window.addEventListener('error', (error) => {
+    console.error('App Error:', error);
+    stopMeasuring(); // Stop measuring on error
+    // Could add user notification here
+});
+
 // Start measuring function
 function startMeasuring() {
     console.log('Attempting to enable measuring...');

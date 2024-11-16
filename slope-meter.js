@@ -268,17 +268,29 @@ const CALIBRATION_SAMPLES = 30;    // Increased from 10 to 30 samples
 const SAMPLE_INTERVAL = 100;       // Take a sample every 100ms
 
 // Start calibration process
-async function startCalibration() {
-    if (!await checkDeviceSupport()) {
-        console.error('Device sensors not available for calibration');
-        return;
-    }
+// Constants for calibration (keep these at top of file)
+const SMOOTHING = 0.8;
+const MAX_ANGLE = 20;
+const CALIBRATION_DURATION = 3000; // 3 seconds total calibration time
+const CALIBRATION_SAMPLES = 30;    // Increased from 10 to 30 samples
+const SAMPLE_INTERVAL = 100;       // Take a sample every 100ms
 
+// Start calibration process
+async function startCalibration() {
+    console.log('Starting calibration...'); // Debug log
+    
     const calibrateButton = document.getElementById('calibrateButton');
     const statusElement = document.getElementById('calibrationStatus');
     
-    // Already calibrating - prevent double starts
     if (isCalibrating) {
+        console.log('Already calibrating, returning'); // Debug log
+        return;
+    }
+
+    const hasSupport = await checkDeviceSupport();
+    if (!hasSupport) {
+        console.error('Device sensors not available for calibration');
+        statusElement.textContent = 'Sensors not available';
         return;
     }
 
@@ -286,91 +298,72 @@ async function startCalibration() {
     isCalibrating = true;
     calibrationReadings = [];
     
-    // Update UI to show calibration in progress
+    // Update UI
     calibrateButton.classList.add('calibrating');
-    calibrateButton.disabled = true;
     statusElement.textContent = translations[currentLanguage].calibrating;
     
-    // Vibrate to indicate start of calibration
-    vibrateDevice([100]);
-
-    let samplesCollected = 0;
-    let calibrationHandler;
-    
-    const cleanupCalibration = (success = false) => {
-        window.removeEventListener('deviceorientation', calibrationHandler);
-        isCalibrating = false;
-        calibrateButton.classList.remove('calibrating');
-        calibrateButton.disabled = false;
+    try {
+        // Vibrate to indicate start
+        vibrateDevice([100]);
         
-        if (success) {
-            vibrateDevice([100, 50, 100]); // Success vibration pattern
-            statusElement.textContent = translations[currentLanguage].calibrated;
-            // Clear success message after 3 seconds
-            setTimeout(() => {
-                if (statusElement.textContent === translations[currentLanguage].calibrated) {
-                    statusElement.textContent = '';
-                }
-            }, 3000);
-        } else {
-            vibrateDevice([300]); // Error vibration pattern
-        }
-    };
-
-    return new Promise((resolve, reject) => {
+        let samplesCollected = 0;
         let startTime = Date.now();
-        let lastSampleTime = 0;
         
-        const timeout = setTimeout(() => {
-            cleanupCalibration(false);
-            statusElement.textContent = 'Calibration timeout - please try again';
-            reject(new Error('Calibration timeout'));
-        }, CALIBRATION_DURATION + 1000); // Add 1 second buffer to total duration
-
-        calibrationHandler = (event) => {
-            if (!isCalibrating) return;
-            
-            const currentTime = Date.now();
-            const elapsedTime = currentTime - startTime;
-            
-            // Only take samples at the specified interval
-            if (currentTime - lastSampleTime >= SAMPLE_INTERVAL) {
+        return new Promise((resolve, reject) => {
+            const calibrationHandler = (event) => {
+                if (!isCalibrating) return;
+                
+                const currentTime = Date.now();
+                const elapsedTime = currentTime - startTime;
+                
                 try {
                     const reading = getOrientationReading(event);
                     if (reading !== null) {
                         calibrationReadings.push(reading);
                         samplesCollected++;
-                        lastSampleTime = currentTime;
                         
-                        // Update progress message
+                        // Update progress
                         const progressPercent = Math.min(100, Math.round((elapsedTime / CALIBRATION_DURATION) * 100));
                         statusElement.textContent = `${translations[currentLanguage].calibrating} ${progressPercent}%`;
                         
-                        // If we've collected enough samples or time is up, complete calibration
                         if (samplesCollected >= CALIBRATION_SAMPLES || elapsedTime >= CALIBRATION_DURATION) {
-                            clearTimeout(timeout);
-                            if (calibrationReadings.length >= CALIBRATION_SAMPLES * 0.8) { // At least 80% of desired samples
-                                processCalibrationData();
-                                cleanupCalibration(true);
-                                resolve();
-                            } else {
-                                cleanupCalibration(false);
-                                statusElement.textContent = 'Not enough valid readings - please try again';
-                                reject(new Error('Insufficient valid readings'));
-                            }
+                            window.removeEventListener('deviceorientation', calibrationHandler);
+                            processCalibrationData();
+                            isCalibrating = false;
+                            calibrateButton.classList.remove('calibrating');
+                            statusElement.textContent = translations[currentLanguage].calibrated;
+                            vibrateDevice([100, 50, 100]);
+                            resolve();
                         }
                     }
                 } catch (error) {
                     console.error('Error during calibration:', error);
-                    cleanupCalibration(false);
-                    statusElement.textContent = 'Calibration error - please try again';
+                    cleanup(false);
                     reject(error);
                 }
-            }
-        };
+            };
 
-        window.addEventListener('deviceorientation', calibrationHandler);
-    });
+            // Start listening for orientation events
+            window.addEventListener('deviceorientation', calibrationHandler);
+            
+            // Set timeout for calibration
+            setTimeout(() => {
+                if (isCalibrating) {
+                    window.removeEventListener('deviceorientation', calibrationHandler);
+                    isCalibrating = false;
+                    calibrateButton.classList.remove('calibrating');
+                    statusElement.textContent = 'Calibration timeout - please try again';
+                    vibrateDevice([300]);
+                    reject(new Error('Calibration timeout'));
+                }
+            }, CALIBRATION_DURATION + 1000);
+        });
+    } catch (error) {
+        console.error('Calibration error:', error);
+        isCalibrating = false;
+        calibrateButton.classList.remove('calibrating');
+        statusElement.textContent = 'Calibration error - please try again';
+    }
 }
 
 // Process collected calibration data
@@ -407,6 +400,10 @@ function processCalibrationData() {
         }
     }
 }
+
+
+
+
 
 // Load saved calibration on startup
 function loadCalibration() {

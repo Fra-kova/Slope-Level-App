@@ -2,7 +2,7 @@
 <html>
 <head>
     <title>Slope & Level Meter</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1">`````2
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -23,54 +23,221 @@
             margin: 20px 0;
             text-shadow: 0 0 10px rgba(163, 255, 0, 0.5);
         }
+        .control-panel {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 10px;
+            margin: 20px 0;
+        }
         button {
             background: #a3ff00;
             border: none;
             padding: 15px 30px;
             border-radius: 25px;
-            font-size: 18px;
+            font-size: 16px;
             color: #1a1a1a;
             cursor: pointer;
+            margin: 5px;
+            min-width: 120px;
+            transition: background-color 0.3s, transform 0.1s;
+        }
+        button:active {
+            transform: scale(0.95);
+        }
+        button.active {
+            background: #00a3ff;
+            color: white;
+        }
+        button.calibrate {
+            background: #00a3ff;
+            color: white;
+        }
+        button.calibrating {
+            background: #ff6b6b;
+            animation: pulse 1s infinite;
         }
         .indicator {
-            width: 200px;
-            height: 40px;
-            background: #333;
+            width: 300px;
+            height: 60px;
+            background: linear-gradient(to bottom, #444, #333);
             margin: 20px auto;
-            border-radius: 20px;
+            border-radius: 30px;
             position: relative;
             overflow: hidden;
+            border: 3px solid #555;
+        }
+        .indicator::before,
+        .indicator::after {
+            content: '';
+            position: absolute;
+            top: 5px;
+            bottom: 5px;
+            width: 2px;
+            background: rgba(255, 255, 255, 0.5);
+        }
+        .indicator::before {
+            left: 50%;
+            transform: translateX(-12px);
+        }
+        .indicator::after {
+            left: 50%;
+            transform: translateX(10px);
         }
         .bubble {
-            width: 36px;
-            height: 36px;
-            background: #a3ff00;
+            width: 50px;
+            height: 50px;
+            background: radial-gradient(circle at 35% 35%, 
+                rgba(255, 255, 255, 0.8) 0%, 
+                rgba(163, 255, 0, 0.8) 50%, 
+                rgba(163, 255, 0, 0.4) 100%);
             border-radius: 50%;
             position: absolute;
-            top: 2px;
+            top: 5px;
             left: 50%;
             transform: translateX(-50%);
-            transition: left 0.2s;
+            transition: left 0.3s ease-out, background 0.3s;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.3);
+        }
+        .bubble.off-level {
+            background: radial-gradient(circle at 35% 35%, 
+                rgba(255, 255, 255, 0.8) 0%, 
+                rgba(255, 107, 107, 0.8) 50%, 
+                rgba(255, 107, 107, 0.4) 100%);
+        }
+        .graduation {
+            position: absolute;
+            top: 5px;
+            bottom: 5px;
+            width: 1px;
+            background: rgba(255, 255, 255, 0.3);
+        }
+        .graduation.center {
+            background: rgba(255, 255, 255, 0.6);
+            width: 2px;
+        }
+        .settings-panel {
+            background: #333;
+            border-radius: 10px;
+            padding: 15px;
+            margin-top: 20px;
+        }
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+        .calibration-status {
+            font-size: 14px;
+            color: #00a3ff;
+            margin-top: 10px;
+            height: 20px;
         }
     </style>
 </head>
 <body>
     <div class="meter">
-        <h1>Slope & Level Meter</h1>
+        <h1 id="title">Slope & Level Meter</h1>
         <div class="indicator">
+            <div id="graduations"></div>
             <div class="bubble" id="bubble"></div>
         </div>
         <div class="reading">
-            Angle: <span id="angle">0.0</span>°<br>
-            Slope: <span id="slope">0.0</span>"/ft
+            <span id="angleLabel">Angle</span>: <span id="angle">0.0</span>°<br>
+            <span id="slopeLabel">Slope</span>: <span id="slope">0.0</span>"/ft
         </div>
-        <button onclick="startMeasuring()">Start Measuring</button>
+        <div class="control-panel">
+            <button onclick="startMeasuring()" id="startButton">Start Measuring</button>
+            <button onclick="startCalibration()" id="calibrateButton" class="calibrate">Calibrate</button>
+            <button onclick="toggleLanguage()" id="languageButton">Español</button>
+            <button onclick="toggleUnit()" id="unitButton">Change Units</button>
+        </div>
+        <div id="calibrationStatus" class="calibration-status"></div>
     </div>
 
     <script>
+        // Smoothing factor (0 to 1, higher = smoother but more lag)
+        const SMOOTHING = 0.85;
+        let lastAngle = 0;
+        let lastSlope = 0;
+        
+        // Language support
+        const translations = {
+            en: {
+                title: "Slope & Level Meter",
+                start: "Start Measuring",
+                calibrate: "Calibrate",
+                setZero: "Set Zero Point",
+                angle: "Angle",
+                slope: "Slope",
+                spanish: "Español",
+                english: "English",
+                units: "Change Units",
+                calibrating: "Place on level surface and tap again",
+                calibrated: "Calibration complete!"
+            },
+            es: {
+                title: "Medidor de Nivel y Pendiente",
+                start: "Comenzar Medición",
+                calibrate: "Calibrar",
+                setZero: "Punto Cero",
+                angle: "Ángulo",
+                slope: "Pendiente",
+                spanish: "Español",
+                english: "Inglés",
+                units: "Cambiar Unidades",
+                calibrating: "Coloque en superficie nivelada y toque de nuevo",
+                calibrated: "¡Calibración completa!"
+            }
+        };
+
+        let currentLanguage = 'en';
+        let currentUnit = 'slope'; // slope, degree, percent
+        let isCalibrating = false;
+        let calibrationOffset = 0;
+        let isMeasuring = false;
+        
+        function toggleLanguage() {
+            currentLanguage = currentLanguage === 'en' ? 'es' : 'en';
+            updateUI();
+        }
+
+        function toggleUnit() {
+            const units = ['slope', 'degree', 'percent'];
+            const currentIndex = units.indexOf(currentUnit);
+            currentUnit = units[(currentIndex + 1) % units.length];
+            updateUI();
+            const unitButton = document.getElementById('unitButton');
+            unitButton.textContent = currentUnit.charAt(0).toUpperCase() + currentUnit.slice(1);
+        }
+
+        function updateUI() {
+            const t = translations[currentLanguage];
+            document.getElementById('title').textContent = t.title;
+            document.getElementById('startButton').textContent = t.start;
+            document.getElementById('calibrateButton').textContent = isCalibrating ? t.setZero : t.calibrate;
+            document.getElementById('angleLabel').textContent = t.angle;
+            document.getElementById('slopeLabel').textContent = t.slope;
+            document.getElementById('languageButton').textContent = currentLanguage === 'en' ? 'Español' : 'English';
+            
+            if (isCalibrating) {
+                document.getElementById('calibrationStatus').textContent = t.calibrating;
+            }
+        }
+
+        function addGraduations() {
+            const container = document.getElementById('graduations');
+            for (let i = -45; i <= 45; i += 5) {
+                const mark = document.createElement('div');
+                mark.className = 'graduation' + (i === 0 ? ' center' : '');
+                const position = (i + 45) * (300 / 90);
+                mark.style.left = `${position}px`;
+                container.appendChild(mark);
+            }
+        }
+
         function startMeasuring() {
             if (typeof DeviceOrientationEvent.requestPermission === 'function') {
-                // iOS requires permission
                 DeviceOrientationEvent.requestPermission()
                     .then(response => {
                         if (response === 'granted') {
@@ -79,34 +246,94 @@
                     })
                     .catch(console.error);
             } else {
-                // Android and others
                 initSensor();
             }
+            isMeasuring = true;
+        }
+
+        function startCalibration() {
+            const t = translations[currentLanguage];
+            const statusDiv = document.getElementById('calibrationStatus');
+            const calibrateButton = document.getElementById('calibrateButton');
+            
+            if (!isCalibrating) {
+                isCalibrating = true;
+                calibrateButton.classList.add('calibrating');
+                statusDiv.textContent = t.calibrating;
+            } else {
+                // Set calibration
+                calibrationOffset = lastRawAngle || 0;
+                
+                // Reset state
+                isCalibrating = false;
+                calibrateButton.classList.remove('calibrating');
+                statusDiv.textContent = t.calibrated;
+                
+                // Clear status after 2 seconds
+                setTimeout(() => {
+                    statusDiv.textContent = '';
+                }, 2000);
+            }
+            updateUI();
+        }
+
+        let lastRawAngle = 0;
+
+        function smoothValue(current, last, smoothing) {
+            return (current * (1 - smoothing)) + (last * smoothing);
         }
 
         function initSensor() {
             window.addEventListener('deviceorientation', (event) => {
-                let angle = event.beta; // Get pitch angle
-                if (angle < 0) angle += 360;
-                angle = Math.round(angle * 10) / 10;
+                let rawAngle = event.beta;
+                lastRawAngle = rawAngle;
                 
-                // Calculate slope (inches per foot)
-                const slope = Math.round((Math.tan(angle * Math.PI / 180) * 12) * 100) / 100;
+                if (rawAngle < 0) rawAngle += 360;
+                rawAngle -= calibrationOffset;
                 
-                // Update display
-                document.getElementById('angle').textContent = angle;
-                document.getElementById('slope').textContent = slope;
+                // Smooth the angle
+                const smoothedAngle = smoothValue(rawAngle, lastAngle, SMOOTHING);
+                lastAngle = smoothedAngle;
                 
-                // Update bubble position
+                // Calculate slope
+                const slope = Math.tan(smoothedAngle * Math.PI / 180) * 12;
+                const smoothedSlope = smoothValue(slope, lastSlope, SMOOTHING);
+                lastSlope = smoothedSlope;
+                
+                // Update displays based on current unit
+                const angleDisplay = document.getElementById('angle');
+                const slopeDisplay = document.getElementById('slope');
+                
+                switch(currentUnit) {
+                    case 'slope':
+                        angleDisplay.textContent = smoothedAngle.toFixed(1);
+                        slopeDisplay.textContent = smoothedSlope.toFixed(2);
+                        break;
+                    case 'degree':
+                        angleDisplay.textContent = smoothedAngle.toFixed(1);
+                        slopeDisplay.textContent = smoothedAngle.toFixed(1);
+                        break;
+                    case 'percent':
+                        const percent = Math.tan(smoothedAngle * Math.PI / 180) * 100;
+                        angleDisplay.textContent = smoothedAngle.toFixed(1);
+                        slopeDisplay.textContent = percent.toFixed(1) + '%';
+                        break;
+                }
+                
+                // Update bubble position with smoothing
                 const bubble = document.getElementById('bubble');
-                const position = (angle + 45) * (200 / 90); // Scale angle to pixel position
-                bubble.style.left = `${Math.max(2, Math.min(198, position))}px`;
+                const position = (smoothedAngle + 45) * (300 / 90);
+                bubble.style.left = `${Math.max(5, Math.min(295, position))}px`;
                 
-                // Color feedback
-                const isIdealSlope = Math.abs(slope - 0.25) < 0.05; // Check if close to 1/4" per foot
-                bubble.style.background = isIdealSlope ? '#a3ff00' : '#ff6b6b';
+                // Check if level (within 0.5 degrees)
+                const isLevel = Math.abs(smoothedAngle) < 0.5;
+                bubble.classList.toggle('off-level', !isLevel);
             });
         }
+
+        // Initialize
+        addGraduations();
+        updateUI();
     </script>
 </body>
 </html>

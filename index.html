@@ -51,12 +51,6 @@
             width: 100%;
         }
 
-        @media (max-width: 360px) {
-            .control-panel {
-                grid-template-columns: 1fr;
-            }
-        }
-
         button {
             background: #a3ff00;
             border: none;
@@ -78,6 +72,16 @@
             transform: scale(0.95);
         }
 
+        button.calibrate {
+            background: #00a3ff;
+            color: white;
+        }
+
+        button.calibrating {
+            background: #ff6b6b;
+            animation: pulse 1s infinite;
+        }
+
         .indicator {
             width: min(300px, 90vw);
             height: min(60px, 15vw);
@@ -87,6 +91,26 @@
             position: relative;
             overflow: hidden;
             border: 3px solid #555;
+        }
+
+        .indicator::before,
+        .indicator::after {
+            content: '';
+            position: absolute;
+            top: 5px;
+            bottom: 5px;
+            width: 2px;
+            background: rgba(255, 255, 255, 0.5);
+        }
+
+        .indicator::before {
+            left: 50%;
+            transform: translateX(-12px);
+        }
+
+        .indicator::after {
+            left: 50%;
+            transform: translateX(10px);
         }
 
         .bubble {
@@ -105,17 +129,45 @@
             box-shadow: 0 0 10px rgba(0, 0, 0, 0.3);
         }
 
-        /* Safe area insets for newer devices */
-        @supports (padding: max(0px)) {
-            body {
-                padding-left: max(10px, env(safe-area-inset-left));
-                padding-right: max(10px, env(safe-area-inset-right));
-                padding-top: max(10px, env(safe-area-inset-top));
-                padding-bottom: max(10px, env(safe-area-inset-bottom));
+        .bubble.off-level {
+            background: radial-gradient(circle at 35% 35%, 
+                rgba(255, 255, 255, 0.8) 0%, 
+                rgba(255, 107, 107, 0.8) 50%, 
+                rgba(255, 107, 107, 0.4) 100%);
+        }
+
+        .graduation {
+            position: absolute;
+            top: 5px;
+            bottom: 5px;
+            width: 1px;
+            background: rgba(255, 255, 255, 0.3);
+        }
+
+        .graduation.center {
+            background: rgba(255, 255, 255, 0.6);
+            width: 2px;
+        }
+
+        .calibration-status {
+            font-size: min(14px, 4vw);
+            color: #00a3ff;
+            margin-top: 10px;
+            height: 20px;
+        }
+
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+
+        @media (max-width: 360px) {
+            .control-panel {
+                grid-template-columns: 1fr;
             }
         }
 
-        /* Orientation specific styles */
         @media screen and (orientation: landscape) {
             .meter {
                 display: grid;
@@ -139,20 +191,80 @@
                 margin: 10px 0;
             }
         }
-
-        /* High pixel density screens */
-        @media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 192dpi) {
-            .bubble {
-                box-shadow: 0 0 5px rgba(0, 0, 0, 0.3);
-            }
-        }
-
-        /* Prevent text size adjustment on orientation change */
-        html {
-            -webkit-text-size-adjust: 100%;
-        }
-
-        [Rest of your existing styles...]
     </style>
 </head>
-[Rest of your existing HTML and JavaScript code remains the same]
+<body>
+    <div class="meter">
+        <h1 id="title">Slope & Level Meter</h1>
+        <div class="indicator">
+            <div id="graduations"></div>
+            <div class="bubble" id="bubble"></div>
+        </div>
+        <div class="reading">
+            <span id="angleLabel">Angle</span>: <span id="angle">0.0</span>°<br>
+            <span id="slopeLabel">Slope</span>: <span id="slope">0.0</span>"/ft
+        </div>
+        <div class="control-panel">
+            <button onclick="startMeasuring()" id="startButton">Start Measuring</button>
+            <button onclick="startCalibration()" id="calibrateButton" class="calibrate">Calibrate</button>
+            <button onclick="toggleLanguage()" id="languageButton">Español</button>
+            <button onclick="toggleUnit()" id="unitButton">Change Units</button>
+        </div>
+        <div id="calibrationStatus" class="calibration-status"></div>
+    </div>
+
+    <script>
+        // Smoothing factor (0 to 1, higher = smoother but more lag)
+        const SMOOTHING = 0.85;
+        let lastAngle = 0;
+        let lastSlope = 0;
+        
+        // Language support
+        const translations = {
+            en: {
+                title: "Slope & Level Meter",
+                start: "Start Measuring",
+                calibrate: "Calibrate",
+                setZero: "Set Zero Point",
+                angle: "Angle",
+                slope: "Slope",
+                spanish: "Español",
+                english: "English",
+                units: "Change Units",
+                calibrating: "Place on level surface and tap again",
+                calibrated: "Calibration complete!"
+            },
+            es: {
+                title: "Medidor de Nivel y Pendiente",
+                start: "Comenzar Medición",
+                calibrate: "Calibrar",
+                setZero: "Punto Cero",
+                angle: "Ángulo",
+                slope: "Pendiente",
+                spanish: "Español",
+                english: "Inglés",
+                units: "Cambiar Unidades",
+                calibrating: "Coloque en superficie nivelada y toque de nuevo",
+                calibrated: "¡Calibración completa!"
+            }
+        };
+
+        let currentLanguage = 'en';
+        let currentUnit = 'slope'; // slope, degree, percent
+        let isCalibrating = false;
+        let calibrationOffset = 0;
+        let isMeasuring = false;
+        
+        function toggleLanguage() {
+            currentLanguage = currentLanguage === 'en' ? 'es' : 'en';
+            updateUI();
+        }
+
+        function toggleUnit() {
+            const units = ['slope', 'degree', 'percent'];
+            const currentIndex = units.indexOf(currentUnit);
+            currentUnit = units[(currentIndex + 1) % units.length];
+            updateUI();
+            const unitButton = document.getElementById('unitButton');
+            unitButton.textContent = currentUnit.charAt(0).toUpperCase() + currentUnit.slice(1);
+        }

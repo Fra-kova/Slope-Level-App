@@ -29,7 +29,9 @@ const translations = {
 // Constants
 const SMOOTHING = 0.8;
 const MAX_ANGLE = 20;
-const CALIBRATION_SAMPLES = 10;
+const CALIBRATION_DURATION = 3000; // 3 seconds total calibration time
+const CALIBRATION_SAMPLES = 30;    // Increased from 10 to 30 samples
+const SAMPLE_INTERVAL = 100;       // Take a sample every 100ms
 
 // State variables
 let currentLanguage = 'en';
@@ -260,6 +262,12 @@ function getOrientationReading(event) {
 }
 
 // Start calibration process
+// Constants for calibration
+const CALIBRATION_DURATION = 3000; // 3 seconds total calibration time
+const CALIBRATION_SAMPLES = 30;    // Increased from 10 to 30 samples
+const SAMPLE_INTERVAL = 100;       // Take a sample every 100ms
+
+// Start calibration process
 async function startCalibration() {
     if (!await checkDeviceSupport()) {
         console.error('Device sensors not available for calibration');
@@ -269,52 +277,95 @@ async function startCalibration() {
     const calibrateButton = document.getElementById('calibrateButton');
     const statusElement = document.getElementById('calibrationStatus');
     
+    // Already calibrating - prevent double starts
+    if (isCalibrating) {
+        return;
+    }
+
     // Reset calibration state
     isCalibrating = true;
     calibrationReadings = [];
     
-    // Update UI
+    // Update UI to show calibration in progress
     calibrateButton.classList.add('calibrating');
+    calibrateButton.disabled = true;
     statusElement.textContent = translations[currentLanguage].calibrating;
     
-    // Start collecting calibration samples
+    // Vibrate to indicate start of calibration
+    vibrateDevice([100]);
+
+    let samplesCollected = 0;
     let calibrationHandler;
     
-    const cleanupCalibration = () => {
+    const cleanupCalibration = (success = false) => {
         window.removeEventListener('deviceorientation', calibrationHandler);
         isCalibrating = false;
         calibrateButton.classList.remove('calibrating');
+        calibrateButton.disabled = false;
+        
+        if (success) {
+            vibrateDevice([100, 50, 100]); // Success vibration pattern
+            statusElement.textContent = translations[currentLanguage].calibrated;
+            // Clear success message after 3 seconds
+            setTimeout(() => {
+                if (statusElement.textContent === translations[currentLanguage].calibrated) {
+                    statusElement.textContent = '';
+                }
+            }, 3000);
+        } else {
+            vibrateDevice([300]); // Error vibration pattern
+        }
     };
 
     return new Promise((resolve, reject) => {
+        let startTime = Date.now();
+        let lastSampleTime = 0;
+        
         const timeout = setTimeout(() => {
-            cleanupCalibration();
+            cleanupCalibration(false);
             statusElement.textContent = 'Calibration timeout - please try again';
             reject(new Error('Calibration timeout'));
-        }, 10000); // 10 second timeout
+        }, CALIBRATION_DURATION + 1000); // Add 1 second buffer to total duration
 
         calibrationHandler = (event) => {
             if (!isCalibrating) return;
             
-            try {
-                const reading = getOrientationReading(event);
-                if (reading !== null) {
-                    calibrationReadings.push(reading);
-                    
-                    // Once we have enough samples, process them
-                    if (calibrationReadings.length >= CALIBRATION_SAMPLES) {
-                        clearTimeout(timeout);
-                        processCalibrationData();
-                        cleanupCalibration();
-                        statusElement.textContent = translations[currentLanguage].calibrated;
-                        resolve();
+            const currentTime = Date.now();
+            const elapsedTime = currentTime - startTime;
+            
+            // Only take samples at the specified interval
+            if (currentTime - lastSampleTime >= SAMPLE_INTERVAL) {
+                try {
+                    const reading = getOrientationReading(event);
+                    if (reading !== null) {
+                        calibrationReadings.push(reading);
+                        samplesCollected++;
+                        lastSampleTime = currentTime;
+                        
+                        // Update progress message
+                        const progressPercent = Math.min(100, Math.round((elapsedTime / CALIBRATION_DURATION) * 100));
+                        statusElement.textContent = `${translations[currentLanguage].calibrating} ${progressPercent}%`;
+                        
+                        // If we've collected enough samples or time is up, complete calibration
+                        if (samplesCollected >= CALIBRATION_SAMPLES || elapsedTime >= CALIBRATION_DURATION) {
+                            clearTimeout(timeout);
+                            if (calibrationReadings.length >= CALIBRATION_SAMPLES * 0.8) { // At least 80% of desired samples
+                                processCalibrationData();
+                                cleanupCalibration(true);
+                                resolve();
+                            } else {
+                                cleanupCalibration(false);
+                                statusElement.textContent = 'Not enough valid readings - please try again';
+                                reject(new Error('Insufficient valid readings'));
+                            }
+                        }
                     }
+                } catch (error) {
+                    console.error('Error during calibration:', error);
+                    cleanupCalibration(false);
+                    statusElement.textContent = 'Calibration error - please try again';
+                    reject(error);
                 }
-            } catch (error) {
-                console.error('Error during calibration:', error);
-                cleanupCalibration();
-                statusElement.textContent = 'Calibration error - please try again';
-                reject(error);
             }
         };
 
@@ -338,16 +389,21 @@ function processCalibrationData() {
 
     // Calculate new offset as mean of valid readings
     if (validReadings.length > 0) {
-        calibrationOffset = validReadings.reduce((a, b) => a + b, 0) / validReadings.length;
+        const newOffset = validReadings.reduce((a, b) => a + b, 0) / validReadings.length;
         
-        // Save calibration to localStorage
-        try {
-            localStorage.setItem('slopeMeterCalibration', JSON.stringify({
-                offset: calibrationOffset,
-                timestamp: Date.now()
-            }));
-        } catch (e) {
-            console.warn('Failed to save calibration:', e);
+        // Only update if the new calibration is significantly different
+        if (Math.abs(newOffset - calibrationOffset) > 0.1) {
+            calibrationOffset = newOffset;
+            
+            // Save calibration to localStorage
+            try {
+                localStorage.setItem('slopeMeterCalibration', JSON.stringify({
+                    offset: calibrationOffset,
+                    timestamp: Date.now()
+                }));
+            } catch (e) {
+                console.warn('Failed to save calibration:', e);
+            }
         }
     }
 }

@@ -1,3 +1,175 @@
+// Add these constants at the top with your other constants
+const DEVICE_SUPPORT = {
+    orientation: false,
+    motion: false
+};
+
+// Enhanced device capability detection
+function checkDeviceCapabilities() {
+    return new Promise((resolve) => {
+        // Check for orientation support
+        if (window.DeviceOrientationEvent) {
+            DEVICE_SUPPORT.orientation = true;
+        }
+        
+        // Check for motion support
+        if (window.DeviceMotionEvent) {
+            DEVICE_SUPPORT.motion = true;
+        }
+
+        // iOS 13+ requires permission request
+        if (typeof DeviceOrientationEvent !== 'undefined' && 
+            typeof DeviceOrientationEvent.requestPermission === 'function') {
+            console.log('iOS 13+ detected, permission will be required');
+            resolve('permission_required');
+        } else if (DEVICE_SUPPORT.orientation) {
+            resolve('supported');
+        } else {
+            resolve('unsupported');
+        }
+    });
+}
+
+// Enhanced start measuring function
+async function startMeasuring() {
+    console.log('Starting measurement system...');
+    
+    if (isMeasuring) {
+        stopMeasuring();
+        return;
+    }
+
+    const support = await checkDeviceCapabilities();
+    
+    if (support === 'permission_required') {
+        try {
+            const permission = await DeviceOrientationEvent.requestPermission();
+            if (permission === 'granted') {
+                enableMeasuring();
+            } else {
+                console.error('Permission denied');
+                // Could add UI feedback here
+            }
+        } catch (error) {
+            console.error('Error requesting permission:', error);
+            // Could add UI feedback here
+        }
+    } else if (support === 'supported') {
+        enableMeasuring();
+    } else {
+        console.error('Device orientation not supported');
+        // Could add UI feedback here
+    }
+}
+
+// Enhanced orientation handling
+function handleOrientation(event) {
+    if (!isMeasuring || !event) return;
+
+    let angle;
+    const orientation = window.screen.orientation.type;
+    
+    try {
+        // Enhanced orientation detection with fallbacks
+        if (orientation.includes('landscape')) {
+            // In landscape, prefer gamma (left/right tilt)
+            angle = event.gamma || 0;
+            // Handle device being upside down
+            if (orientation.includes('secondary')) {
+                angle = -angle;
+            }
+        } else {
+            // In portrait, prefer beta (forward/backward tilt)
+            angle = event.beta || 0;
+            // Adjust for device being upside down
+            if (Math.abs(event.gamma || 0) > 90) {
+                angle = -angle;
+            }
+        }
+
+        // Validate angle before processing
+        if (typeof angle !== 'number' || isNaN(angle)) {
+            console.warn('Invalid angle reading:', angle);
+            return;
+        }
+
+        // Apply calibration offset
+        angle -= calibrationOffset;
+        
+        // Enhanced smoothing with spike detection
+        if (typeof lastAngle === 'number' && !isNaN(lastAngle)) {
+            // Detect and handle sudden spikes
+            const change = Math.abs(angle - lastAngle);
+            if (change > 45) { // Threshold for spike detection
+                console.warn('Detected sensor spike:', change);
+                return; // Skip this reading
+            }
+            angle = lastAngle * SMOOTHING + angle * (1 - SMOOTHING);
+        }
+        
+        // Clamp final angle to reasonable range
+        angle = Math.max(-MAX_ANGLE, Math.min(MAX_ANGLE, angle));
+        
+        lastAngle = angle;
+
+        // Update UI
+        requestAnimationFrame(() => updateMeasurements(angle));
+    } catch (error) {
+        console.error('Error in handleOrientation:', error);
+        // Could add error recovery logic here
+    }
+}
+
+// Enhanced enable measuring function
+function enableMeasuring() {
+    if (isMeasuring) return;
+    
+    console.log('Enabling measurement system...');
+    isMeasuring = true;
+    lastAngle = null;
+    
+    // Update button state
+    const startButton = document.getElementById('startButton');
+    startButton.textContent = translations[currentLanguage].stop;
+    
+    // Add orientation handler with error checking
+    const orientationHandler = (event) => {
+        if (!event) {
+            console.warn('No orientation data received');
+            return;
+        }
+        handleOrientation(event);
+    };
+    
+    window.addEventListener('deviceorientation', orientationHandler);
+    
+    // Store handler reference for cleanup
+    window.currentOrientationHandler = orientationHandler;
+}
+
+// Enhanced stop measuring function
+function stopMeasuring() {
+    console.log('Stopping measurement system...');
+    isMeasuring = false;
+    
+    // Clean up event listeners
+    if (window.currentOrientationHandler) {
+        window.removeEventListener('deviceorientation', window.currentOrientationHandler);
+        window.currentOrientationHandler = null;
+    }
+    
+    // Reset UI
+    const startButton = document.getElementById('startButton');
+    startButton.textContent = translations[currentLanguage].start;
+    
+    const bubble = document.getElementById('bubble');
+    bubble.style.left = '50%';
+    bubble.classList.remove('off-level');
+    
+    // Reset state
+    lastAngle = null;
+}
+
 // Translations 
 const translations = {
     en: {

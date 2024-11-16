@@ -268,7 +268,33 @@
                 graduationsDiv.appendChild(graduation);
             }
         }
+// Add this just before the handleOrientation function
+function debugOrientation(event) {
+    console.log('Orientation data:', {
+        alpha: event.alpha,
+        beta: event.beta,
+        gamma: event.gamma,
+        orientation: window.screen.orientation.type
+    });
+}
+// Add this just before the handleOrientation function
+function debugOrientation(event) {
+    console.log('Orientation data:', {
+        alpha: event.alpha,
+        beta: event.beta,
+        gamma: event.gamma,
+        orientation: window.screen.orientation.type
+    });
+}
 
+// Your existing handleOrientation function stays as is
+function handleOrientation(event) {
+    // ... existing code ...
+}
+// Your existing handleOrientation function stays as is
+function handleOrientation(event) {
+    // ... existing code ...
+}
         // Device orientation handling
         function handleOrientation(event) {
             if (!isMeasuring) return;
@@ -291,69 +317,82 @@
             updateMeasurements(angle);
         }
 
-        // Start measuring function
-        function startMeasuring() {
-            if (isMeasuring) {
-                isMeasuring = false;
-                document.getElementById('startButton').textContent = translations[currentLanguage].start;
-                window.removeEventListener('deviceorientation', handleOrientation);
-            } else {
-                // Request device orientation permission if needed
-                if (typeof DeviceOrientationEvent !== 'undefined' && 
-                    typeof DeviceOrientationEvent.requestPermission === 'function') {
-                    DeviceOrientationEvent.requestPermission()
-                        .then(response => {
-                            if (response === 'granted') {
-                                enableMeasuring();
-                            }
-                        })
-                        .catch(console.error);
-                } else {
-                    enableMeasuring();
-                }
-            }
+   function startMeasuring() {
+    console.log('Attempting to enable measuring...');
+    if (isMeasuring) {
+        isMeasuring = false;
+        document.getElementById('startButton').textContent = translations[currentLanguage].start;
+        window.removeEventListener('deviceorientation', handleOrientation);
+        window.removeEventListener('deviceorientation', debugOrientation);
+    } else {
+        // Request device orientation permission if needed
+        if (typeof DeviceOrientationEvent !== 'undefined' && 
+            typeof DeviceOrientationEvent.requestPermission === 'function') {
+            DeviceOrientationEvent.requestPermission()
+                .then(response => {
+                    if (response === 'granted') {
+                        enableMeasuring();
+                    }
+                })
+                .catch(console.error);
+        } else {
+            enableMeasuring();
         }
+    }
+}
 
-        function enableMeasuring() {
-            isMeasuring = true;
-            document.getElementById('startButton').textContent = 'Stop';
-            window.addEventListener('deviceorientation', handleOrientation);
-        }
-
+function enableMeasuring() {
+    console.log('Attempting to enable measuring...');
+    isMeasuring = true;
+    document.getElementById('startButton').textContent = 'Stop';
+    
+    // Add debug listener
+    window.addEventListener('deviceorientation', debugOrientation);
+    window.addEventListener('deviceorientation', handleOrientation);
+    console.log('Listeners added');
+}
         // Calibration function
-        function startCalibration() {
-            const calibrateButton = document.getElementById('calibrateButton');
-            const statusDiv = document.getElementById('calibrationStatus');
+      function startCalibration() {
+    console.log('Starting calibration...');
+    const calibrateButton = document.getElementById('calibrateButton');
+    const statusDiv = document.getElementById('calibrationStatus');
 
-            if (!isCalibrating) {
-                isCalibrating = true;
-                calibrateButton.classList.add('calibrating');
-                calibrateButton.textContent = translations[currentLanguage].setZero;
-                statusDiv.textContent = translations[currentLanguage].calibrating;
-            } else {
-                // Get current angle for offset
-                if (window.DeviceOrientationEvent) {
-                    window.addEventListener('deviceorientation', function calibrate(event) {
-                        let currentAngle;
-                        if (window.screen.orientation.type.includes('landscape')) {
-                            currentAngle = event.gamma || 0;
-                        } else {
-                            currentAngle = event.beta || 0;
-                        }
-                        calibrationOffset = currentAngle;
-                        window.removeEventListener('deviceorientation', calibrate);
-                        
-                        // Reset UI
-                        isCalibrating = false;
-                        calibrateButton.classList.remove('calibrating');
-                        calibrateButton.textContent = translations[currentLanguage].calibrate;
-                        statusDiv.textContent = translations[currentLanguage].calibrated;
-                        setTimeout(() => statusDiv.textContent = '', 2000);
-                    }, { once: true });
+    if (!isCalibrating) {
+        console.log('Entering calibration mode...');
+        isCalibrating = true;
+        calibrateButton.classList.add('calibrating');
+        calibrateButton.textContent = translations[currentLanguage].setZero;
+        statusDiv.textContent = translations[currentLanguage].calibrating;
+    } else {
+        console.log('Completing calibration...');
+        // Get current angle for offset
+        if (window.DeviceOrientationEvent) {
+            console.log('Device orientation available');
+            window.addEventListener('deviceorientation', function calibrate(event) {
+                console.log('Calibration event received:', event);
+                let currentAngle;
+                if (window.screen.orientation.type.includes('landscape')) {
+                    currentAngle = event.gamma || 0;
+                } else {
+                    currentAngle = event.beta || 0;
                 }
-            }
+                console.log('Calibration angle:', currentAngle);
+                calibrationOffset = currentAngle;
+                
+                // Reset UI
+                isCalibrating = false;
+                calibrateButton.classList.remove('calibrating');
+                calibrateButton.textContent = translations[currentLanguage].calibrate;
+                statusDiv.textContent = translations[currentLanguage].calibrated;
+                
+                console.log('Calibration complete. Offset:', calibrationOffset);
+                setTimeout(() => statusDiv.textContent = '', 2000);
+            }, { once: true });
+        } else {
+            console.log('DeviceOrientationEvent not available');
         }
-
+    }
+}
         // Update measurements and UI
         function updateMeasurements(angle) {
             // Update angle display based on current unit
